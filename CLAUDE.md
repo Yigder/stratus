@@ -16,6 +16,7 @@ The goal is fidelity to Apple Weather's look and behaviour. When adding or chang
 - compileSdk 37, targetSdk 36, minSdk 29 (raised for the Smartspacer SDK).
 - Release builds are minified and resource-shrunk. Signing comes from a git-ignored `keystore.properties` at the repo root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); without it, release falls back to the debug key. Never commit keystores or that file.
 - Bump `versionCode`/`versionName` in `app/build.gradle.kts` for each release.
+- `origin` is SSH (`git@github.com:Yigder/stratus.git`); push over SSH. HTTPS pushes fail here because git's `gh` credential helper can't run. Use `gh` only for API work such as `gh release create`.
 
 There are no instrumented tests. Verify visual changes by rendering screenshots in `ScreenshotTest` and looking at the PNGs. Test fixtures in `app/src/test/resources` are real API responses for New York City; keep any new fixtures and screenshots to generic public locations.
 
