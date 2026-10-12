@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".StratusApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Weather">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Home-screen widgets -->
+        <receiver android:name=".glance.SmallWidgetReceiver" android:exported="true" android:label="@string/widget_small">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_small" />
+        </receiver>
+        <receiver android:name=".glance.MediumWidgetReceiver" android:exported="true" android:label="@string/widget_medium">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_medium" />
+        </receiver>
+        <receiver android:name=".glance.LargeWidgetReceiver" android:exported="true" android:label="@string/widget_large">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_large" />
+        </receiver>
+        <receiver android:name=".glance.GlanceWidgetReceiver" android:exported="true" android:label="@string/widget_glance">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_glance" />
+        </receiver>
+
+        <!-- Smartspacer plugin: puts Stratus into Pixel's At a Glance when Smartspacer is installed -->
+        <provider
+            android:name=".glance.WeatherComplication"
+            android:authorities="${applicationId}.complication.weather"
+            android:exported="true"
+            android:permission="com.kieronquinn.app.smartspacer.permission.ACCESS_SMARTSPACER_COMPLICATIONS">
+            <intent-filter><action android:name="com.kieronquinn.app.smartspacer.COMPLICATION" /></intent-filter>
+        </provider>
+        <provider
+            android:name=".glance.WeatherTarget"
+            android:authorities="${applicationId}.target.weather"
+            android:exported="true"
+            android:permission="com.kieronquinn.app.smartspacer.permission.ACCESS_SMARTSPACER_TARGETS">
+            <intent-filter><action android:name="com.kieronquinn.app.smartspacer.TARGET" /></intent-filter>
+        </provider>
+    </application>
+</manifest>

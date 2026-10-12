@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Stratus</string>
+    <string name="widget_small">Stratus · Small</string>
+    <string name="widget_medium">Stratus · Medium</string>
+    <string name="widget_large">Stratus · Large</string>
+    <string name="widget_glance">Stratus · At a Glance</string>
+    <string name="widget_small_desc">Current conditions and today\'s high and low.</string>
+    <string name="widget_medium_desc">Current conditions and the next six hours.</string>
+    <string name="widget_large_desc">Current conditions, hourly and six-day forecast.</string>
+    <string name="widget_glance_desc">Date and weather in the style of Pixel\'s At a Glance.</string>
+</resources>
