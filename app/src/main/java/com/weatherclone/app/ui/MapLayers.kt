@@ -6,6 +6,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -15,6 +23,7 @@ import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.tan
 
@@ -46,14 +55,11 @@ class WeatherGrid(
     val times: List<Long>,
     val values: Map<MapLayer, List<FloatArray>>,
     val windDir: List<FloatArray>,
-    val zoom: Float,
 ) {
     private val bitmaps = HashMap<Pair<MapLayer, Int>, ImageBitmap>()
 
     fun lat(row: Int) = Mercator.lat(top + (row + 0.5) * (bottom - top) / ny)
     fun lon(col: Int) = Mercator.lon(left + (col + 0.5) * (right - left) / nx)
-
-    fun covers(l: Double, t: Double, r: Double, b: Double) = l >= left && r <= right && t >= top && b <= bottom
 
     fun bitmap(layer: MapLayer, hour: Int): ImageBitmap? {
         val frames = values[layer] ?: return null
@@ -66,12 +72,6 @@ class WeatherGrid(
 
     companion object {
         const val HOURS = 13
-
-        /** Grid sample points for a mercator rectangle. */
-        fun points(left: Double, top: Double, right: Double, bottom: Double, nx: Int, ny: Int): List<Pair<Double, Double>> =
-            (0 until ny).flatMap { r -> (0 until nx).map { c ->
-                Mercator.lat(top + (r + 0.5) * (bottom - top) / ny) to Mercator.lon(left + (c + 0.5) * (right - left) / nx)
-            } }
 
         fun forecastUrl(pts: List<Pair<Double, Double>>) = "https://api.open-meteo.com/v1/forecast?" +
             "latitude=" + pts.joinToString(",") { String.format(Locale.US, "%.3f", it.first) } +
@@ -99,25 +99,12 @@ class WeatherGrid(
             return FloatArray(HOURS) { i -> ((arr.getOrNull(i) as? JsonPrimitive)?.doubleOrNull ?: Double.NaN).toFloat() }
         }
 
-        fun parse(
-            forecast: String, air: String?,
-            left: Double, top: Double, right: Double, bottom: Double, nx: Int, ny: Int, zoom: Float,
-        ): WeatherGrid? {
-            val locs = locations(forecast)
-            if (locs.size != nx * ny) return null
-            val times = ((locs.first()["hourly"] as? JsonObject)?.get("time") as? JsonArray)
+        /** Splits a multi-location response into per-location series for each of [keys]. */
+        internal fun parseLocations(raw: String, keys: List<String>): Pair<List<Long>, List<Map<String, FloatArray>>> {
+            val locs = locations(raw)
+            val times = ((locs.firstOrNull()?.get("hourly") as? JsonObject)?.get("time") as? JsonArray)
                 ?.mapNotNull { (it as? JsonPrimitive)?.doubleOrNull?.toLong() } ?: emptyList()
-            fun layer(key: String, src: List<JsonObject>): List<FloatArray> {
-                val per = src.map { series(it, key) }
-                return List(HOURS) { h -> FloatArray(nx * ny) { i -> per.getOrNull(i)?.get(h) ?: Float.NaN } }
-            }
-            val values = mutableMapOf(
-                MapLayer.Temperature to layer("temperature_2m", locs),
-                MapLayer.Precipitation to layer("precipitation", locs),
-                MapLayer.Wind to layer("wind_speed_10m", locs),
-            )
-            air?.let { locations(it) }?.takeIf { it.size == nx * ny }?.let { values[MapLayer.AirQuality] = layer("us_aqi", it) }
-            return WeatherGrid(left, top, right, bottom, nx, ny, times, values, layer("wind_direction_10m", locs), zoom)
+            return times to locs.map { o -> keys.associateWith { series(o, it) } }
         }
 
         private val precipStops = listOf(
@@ -153,5 +140,145 @@ class WeatherGrid(
             MapLayer.Wind -> windStops.map { it.second }
             MapLayer.AirQuality -> AqiColors
         }
+    }
+}
+
+/**
+ * Model data cached in fixed mercator blocks of [BLOCK] x [BLOCK] points. Blocks line up the same
+ * way every time, so panning reuses what is loaded and only fetches new ground, and reopening the
+ * map within the hour is instant. Open-Meteo counts every point as an API call (600 a minute), so
+ * re-fetching the whole view on each pan used to hit the limit and leave the map stuck on the area
+ * it first loaded. Lives in the ViewModel; only touched from the main thread.
+ */
+class GridCache(private val fetch: suspend (String) -> String) {
+    data class Key(val level: Int, val x: Int, val y: Int)
+
+    /** A range of blocks at one level. x may run past the antimeridian; keys wrap it. */
+    data class View(val level: Int, val x0: Int, val y0: Int, val x1: Int, val y1: Int) {
+        fun keys() = (y0..y1).flatMap { y -> (x0..x1).map { x -> Key(level, Math.floorMod(x, 1 shl level), y) } }.distinct()
+    }
+
+    private val forecast = HashMap<Key, Map<String, List<FloatArray>>>()
+    private val air = HashMap<Key, Map<String, List<FloatArray>>>()
+    private val pending = HashSet<Pair<Key, Boolean>>()
+    private val failedAt = HashMap<Pair<Key, Boolean>, Long>()
+    private var times: List<Long> = emptyList()
+    private var hour = -1L
+
+    /** Bumped whenever blocks arrive. */
+    var version by mutableIntStateOf(0)
+        private set
+    var loading by mutableIntStateOf(0)
+        private set
+
+    /** Blocks covering a mercator rectangle; each block spans two map tiles at [zoom]. */
+    fun view(left: Double, top: Double, right: Double, bottom: Double, zoom: Float): View {
+        val level = (floor(zoom).toInt() - 1).coerceIn(1, 10)
+        val n = 1 shl level
+        return View(
+            level, floor(left * n).toInt(), floor(top * n).toInt().coerceIn(0, n - 1),
+            floor(right * n).toInt(), floor(bottom * n).toInt().coerceIn(0, n - 1),
+        )
+    }
+
+    fun isComplete(view: View, airLayer: Boolean) = view.keys().all { it in store(airLayer) }
+    fun isPending(view: View, airLayer: Boolean) = view.keys().any { (it to airLayer) in pending }
+
+    private fun store(airLayer: Boolean) = if (airLayer) air else forecast
+
+    /** Fetches whatever part of [view] is missing. Air quality is only fetched when it is shown. */
+    suspend fun load(view: View, airLayer: Boolean) {
+        val h = System.currentTimeMillis() / 3_600_000
+        if (h != hour) { hour = h; forecast.clear(); air.clear(); failedAt.clear(); times = emptyList() }
+        val now = System.currentTimeMillis()
+        val want = view.keys().filter { k ->
+            k !in store(airLayer) && (k to airLayer) !in pending && now - (failedAt[k to airLayer] ?: 0L) > 20_000
+        }
+        if (want.isEmpty()) return
+        want.forEach { pending += it to airLayer }
+        loading++
+        try {
+            coroutineScope {
+                want.chunked(MAX_POINTS / (BLOCK * BLOCK)).map { async { fetchBlocks(it, airLayer) } }.awaitAll()
+            }
+        } finally {
+            loading--
+            want.forEach { pending -= it to airLayer }
+        }
+    }
+
+    private suspend fun fetchBlocks(keys: List<Key>, airLayer: Boolean) {
+        val pts = keys.flatMap { points(it) }
+        val vars = if (airLayer) AIR_VARS else FORECAST_VARS
+        val parsed = runCatching {
+            val raw = fetch(if (airLayer) WeatherGrid.airUrl(pts) else WeatherGrid.forecastUrl(pts))
+            withContext(Dispatchers.Default) { WeatherGrid.parseLocations(raw, vars) }
+        }.getOrNull()
+        if (parsed == null || parsed.second.size != pts.size) {
+            keys.forEach { failedAt[it to airLayer] = System.currentTimeMillis() }
+            return
+        }
+        val (t, locs) = parsed
+        if (times.isEmpty()) times = t
+        val per = BLOCK * BLOCK
+        keys.forEachIndexed { i, k ->
+            val slice = locs.subList(i * per, (i + 1) * per)
+            store(airLayer)[k] = vars.associateWith { v -> slice.map { it.getValue(v) } }
+        }
+        version++
+    }
+
+    /** Sample points of a block, row by row, at the centres of its cells. */
+    private fun points(k: Key): List<Pair<Double, Double>> {
+        val n = (1 shl k.level).toDouble()
+        return (0 until BLOCK * BLOCK).map { p ->
+            Mercator.lat((k.y + (p / BLOCK + 0.5) / BLOCK) / n) to Mercator.lon((k.x + (p % BLOCK + 0.5) / BLOCK) / n)
+        }
+    }
+
+    /** The loaded part of [view] stitched into one grid (missing blocks are NaN); null if none is loaded. */
+    fun composite(view: View): WeatherGrid? {
+        val n = 1 shl view.level
+        val nx = (view.x1 - view.x0 + 1) * BLOCK
+        val ny = (view.y1 - view.y0 + 1) * BLOCK
+        fun empty() = List(WeatherGrid.HOURS) { FloatArray(nx * ny) { Float.NaN } }
+        val out = (FORECAST_VARS + AIR_VARS).associateWith { empty() }
+        var anyForecast = false; var anyAir = false
+        for (by in view.y0..view.y1) for (bx in view.x0..view.x1) {
+            val k = Key(view.level, Math.floorMod(bx, n), by)
+            for ((src, vars) in listOf(forecast[k] to FORECAST_VARS, air[k] to AIR_VARS)) {
+                if (src == null) continue
+                if (vars === AIR_VARS) anyAir = true else anyForecast = true
+                for (p in 0 until BLOCK * BLOCK) {
+                    val i = ((by - view.y0) * BLOCK + p / BLOCK) * nx + (bx - view.x0) * BLOCK + p % BLOCK
+                    for (v in vars) {
+                        val series = src.getValue(v)[p]
+                        val frames = out.getValue(v)
+                        for (h in 0 until WeatherGrid.HOURS) frames[h][i] = series[h]
+                    }
+                }
+            }
+        }
+        if (!anyForecast && !anyAir) return null
+        val values = buildMap {
+            if (anyForecast) {
+                put(MapLayer.Temperature, out.getValue("temperature_2m"))
+                put(MapLayer.Precipitation, out.getValue("precipitation"))
+                put(MapLayer.Wind, out.getValue("wind_speed_10m"))
+            }
+            if (anyAir) put(MapLayer.AirQuality, out.getValue("us_aqi"))
+        }
+        return WeatherGrid(
+            view.x0.toDouble() / n, view.y0.toDouble() / n, (view.x1 + 1).toDouble() / n, (view.y1 + 1).toDouble() / n,
+            nx, ny, times, values, out.getValue("wind_direction_10m"),
+        )
+    }
+
+    companion object {
+        const val BLOCK = 4
+        /** Points per request; Open-Meteo handles this comfortably and the URL stays a few KB. */
+        private const val MAX_POINTS = 192
+        private val FORECAST_VARS = listOf("temperature_2m", "precipitation", "wind_speed_10m", "wind_direction_10m")
+        private val AIR_VARS = listOf("us_aqi")
     }
 }

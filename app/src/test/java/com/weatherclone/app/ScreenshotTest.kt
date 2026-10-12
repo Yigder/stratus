@@ -9,6 +9,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
@@ -137,6 +138,35 @@ class ScreenshotTest {
         val w = weather()
         rule.setContent { Themed { CompositionLocalProvider(LocalScene provides Scene.of(w)) { Box(Modifier.background(Color(0xFF1C1C1E))) { DetailContent(w, Metric.Conditions, null) {} } } } }
         shot("detail_conditions")
+    }
+
+    @Test
+    fun detailConditionsChance() {
+        val w = weather()
+        rule.setContent { Themed { CompositionLocalProvider(LocalScene provides Scene.of(w)) { Box(Modifier.background(Color(0xFF1C1C1E))) { DetailContent(w, Metric.Conditions, null) {} } } } }
+        rule.onRoot().performTouchInput { swipeUp(startY = bottom - 100, endY = centerY, durationMillis = 400) }
+        shot("detail_conditions_chance")
+    }
+
+    private fun detailOf(metric: Metric, name: String) {
+        val w = weather()
+        rule.setContent { Themed { Box(Modifier.background(Color(0xFF1C1C1E))) { DetailContent(w, metric, null) {} } } }
+        shot("detail_$name")
+    }
+
+    @Test fun detailFeels() = detailOf(Metric.Feels, "feels")
+    @Test fun detailWind() = detailOf(Metric.Wind, "wind")
+    @Test fun detailPrecip() = detailOf(Metric.Precip, "precip")
+
+    @Test
+    fun detailSunScrub() {
+        val w = weather()
+        rule.setContent { Themed { Box(Modifier.background(Color(0xFF1C1C1E))) { DetailContent(w, Metric.Sun, null) {} } } }
+        shot("detail_sun")
+        // Press on the curve, then drag sideways to scrub to mid-afternoon, and hold.
+        rule.onRoot().performTouchInput { down(Offset(width * 0.45f, top + 1000f)); moveTo(Offset(width * 0.6f, top + 1000f)) }
+        shot("detail_sun_scrub")
+        rule.onRoot().performTouchInput { up() }
     }
 
     @Test

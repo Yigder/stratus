@@ -126,7 +126,7 @@ fun HourlyCard(w: Weather, open: OpenDetail) {
                     is HourEntry.H -> HourCell(
                         label = if (e.now) "Now" else u.hour(e.hour.time),
                         icon = e.hour.condition.icon,
-                        chance = e.hour.precipChance.takeIf { it >= 20 && com.weatherclone.app.data.Conditions.isPrecip(e.hour.code) || it >= 30 },
+                        chance = rainChance(e.hour.code, e.hour.precipChance),
                         value = u.temp(if (e.now) w.current.temp else e.hour.temp),
                     )
                     is HourEntry.Sun -> HourCell(
@@ -142,6 +142,16 @@ fun HourlyCard(w: Weather, open: OpenDetail) {
     }
 }
 
+/**
+ * The blue percentage under a forecast icon, rounded to 10 as Apple does. Every rain or snow icon
+ * gets one (at least 10%); other icons only when the chance is notable.
+ */
+private fun rainChance(code: Int, chance: Int): Int? = when {
+    com.weatherclone.app.data.Conditions.isPrecip(code) && chance > 0 -> Summaries.roundTo10(chance).coerceAtLeast(10)
+    chance >= 30 -> Summaries.roundTo10(chance)
+    else -> null
+}
+
 @Composable
 private fun HourCell(label: String, icon: WxIcon, chance: Int?, value: String, smallValue: Boolean = false) {
     Column(
@@ -152,7 +162,7 @@ private fun HourCell(label: String, icon: WxIcon, chance: Int?, value: String, s
         Text(label, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1)
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.height(46.dp), verticalArrangement = Arrangement.Center) {
             WeatherIcon(icon, 27.dp)
-            if (chance != null) Text("${Summaries.roundTo10(chance)}%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = RainBlue)
+            if (chance != null) Text("$chance%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = RainBlue)
         }
         Text(value, fontSize = if (smallValue) 15.sp else 20.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1)
     }
@@ -183,7 +193,7 @@ fun TenDayCard(w: Weather, open: OpenDetail) {
                 )
                 Column(Modifier.width(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     WeatherIcon(d.condition.icon, 26.dp)
-                    if (d.precipChance >= 30) Text("${Summaries.roundTo10(d.precipChance)}%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = RainBlue)
+                    rainChance(d.code, d.precipChance)?.let { Text("$it%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = RainBlue) }
                 }
                 Text(u.temp(d.low), style = Type.row.copy(color = Secondary), textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
                 Spacer(Modifier.width(12.dp))

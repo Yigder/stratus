@@ -306,6 +306,114 @@ private class Spec(
     val about: String,
 )
 
+/**
+ * Monotone cubic (Fritsch–Carlson) through hourly values: smooth like Apple's charts, but it never
+ * overshoots a peak or dips below zero between points. Nulls break the curve.
+ */
+private class Curve(private val values: List<Double?>) {
+    private val m = DoubleArray(values.size)
+
+    init {
+        var s = 0
+        while (s < values.size) {
+            if (values[s] == null) { s++; continue }
+            var e = s
+            while (e + 1 < values.size && values[e + 1] != null) e++
+            fit(s, e)
+            s = e + 1
+        }
+    }
+
+    private fun fit(s: Int, e: Int) {
+        if (e == s) return
+        val d = DoubleArray(e - s) { values[s + it + 1]!! - values[s + it]!! }
+        m[s] = d[0]; m[e] = d[e - s - 1]
+        for (k in s + 1 until e) {
+            val a = d[k - s - 1]; val b = d[k - s]
+            m[k] = if (a * b <= 0) 0.0 else (a + b) / 2
+        }
+        for (k in s until e) {
+            val dk = d[k - s]
+            if (dk == 0.0) { m[k] = 0.0; m[k + 1] = 0.0; continue }
+            val a = m[k] / dk; val b = m[k + 1] / dk
+            val h = a * a + b * b
+            if (h > 9) { val t = 3 / kotlin.math.sqrt(h); m[k] = t * a * dk; m[k + 1] = t * b * dk }
+        }
+    }
+
+    /** Value on the curve at fractional index [s]. */
+    fun at(s: Float): Double? {
+        if (values.isEmpty()) return null
+        val i0 = floor(s).toInt().coerceIn(0, values.size - 1)
+        val i1 = (i0 + 1).coerceAtMost(values.size - 1)
+        val a = values[i0] ?: return null
+        val b = values[i1] ?: return a
+        if (i1 == i0) return a
+        val t = (s - i0).toDouble().coerceIn(0.0, 1.0)
+        val t2 = t * t; val t3 = t2 * t
+        return (2 * t3 - 3 * t2 + 1) * a + (t3 - 2 * t2 + t) * m[i0] + (-2 * t3 + 3 * t2) * b + (t3 - t2) * m[i1]
+    }
+
+    /** Adds the curve to [path] and the area between it and [base] to [area]. */
+    fun trace(x: (Float) -> Float, y: (Double) -> Float, base: Float, path: Path, area: Path) {
+        var i = 0
+        while (i < values.size) {
+            val first = values[i]
+            if (first == null) { i++; continue }
+            path.moveTo(x(i.toFloat()), y(first))
+            area.moveTo(x(i.toFloat()), base); area.lineTo(x(i.toFloat()), y(first))
+            while (i + 1 < values.size) {
+                val a = values[i]!!; val b = values[i + 1] ?: break
+                val x0 = x(i.toFloat()); val x1 = x(i + 1f); val dx = (x1 - x0) / 3
+                val c1y = y(a + m[i] / 3); val c2y = y(b - m[i + 1] / 3); val ey = y(b)
+                path.cubicTo(x0 + dx, c1y, x1 - dx, c2y, x1, ey)
+                area.cubicTo(x0 + dx, c1y, x1 - dx, c2y, x1, ey)
+                i++
+            }
+            area.lineTo(x(i.toFloat()), base); area.close()
+            i++
+        }
+    }
+}
+
+/**
+ * Press-and-drag scrubbing that coexists with the sheet's scrolling and day swipes: a sideways drag
+ * or a ~140 ms hold scrubs and consumes; a vertical drag is left for the scroll view. Reports the
+ * finger's x and the element width, then null on release.
+ */
+@Composable
+private fun Modifier.scrubbable(onScrub: (x: Float?, width: Float) -> Unit): Modifier {
+    val scrub by rememberUpdatedState(onScrub)
+    return pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val slop = viewConfiguration.touchSlop
+            var x = down.position.x
+            val scrubbing = withTimeoutOrNull(140L) {
+                var total = Offset.Zero
+                while (true) {
+                    val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
+                    if (!c.pressed) return@withTimeoutOrNull false
+                    total += c.positionChange()
+                    x = c.position.x
+                    if (abs(total.x) > slop && abs(total.x) > abs(total.y)) { c.consume(); return@withTimeoutOrNull true }
+                    if (abs(total.y) > slop) return@withTimeoutOrNull false
+                }
+                false
+            } ?: true
+            if (!scrubbing) return@awaitEachGesture
+            scrub(x, size.width.toFloat())
+            while (true) {
+                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                if (!c.pressed) break
+                c.consume()
+                scrub(c.position.x, size.width.toFloat())
+            }
+            scrub(null, size.width.toFloat())
+        }
+    }
+}
+
 private fun niceStep(range: Double): Double {
     val raw = range / 4
     val mag = Math.pow(10.0, floor(Math.log10(raw.coerceAtLeast(1e-6))))
@@ -492,13 +600,27 @@ private fun ChartDetail(w: Weather, metric: Metric, date: LocalDate, menuButton:
         }
     }
 
-    if (metric == Metric.Precip && spec.secondary != null) {
-        Spacer(Modifier.height(20.dp))
+    // Hourly chance as bars under the main chart, as in Apple's Conditions view. It shares the
+    // selection, so scrubbing either chart highlights the same hour in both.
+    if ((metric == Metric.Conditions || metric == Metric.Precip) && day != null) {
+        Spacer(Modifier.height(24.dp))
         Text("Chance of Precipitation", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        val selChance = sel?.let { hours.getOrNull(it) }
+        Text(
+            when {
+                selChance != null -> "${u.hour(selChance.time)}  ·  ${selChance.precipChance}%"
+                isToday -> "Today's Chance: ${day.precipChance}%"
+                else -> "Chance: ${day.precipChance}%"
+            },
+            fontSize = 15.sp, color = Secondary, maxLines = 1,
+        )
         Spacer(Modifier.height(8.dp))
         Chart(
-            Spec(values = spec.secondary, yMin = 0.0, yMax = 100.0, color = { RainBlue }, fmt = { "${it.roundToInt()}%" }, axis = { "${it.roundToInt()}%" }, headline = "", sub = "", summary = "", about = ""),
-            nowIdx, { null }, {}, Modifier.fillMaxWidth().height(160.dp), interactive = false,
+            Spec(
+                values = hours.map { it.precipChance.toDouble() }, yMin = 0.0, yMax = 100.0, color = { RainBlue }, bars = true,
+                fmt = { "${it.roundToInt()}%" }, axis = { "${it.roundToInt()}%" }, headline = "", sub = "", summary = "", about = "",
+            ),
+            nowIdx, selected = { scrub }, onSelect = { scrub = it }, modifier = Modifier.fillMaxWidth().height(170.dp),
         )
     }
 
@@ -537,45 +659,15 @@ private fun Chart(
     val measurer = rememberTextMeasurer(cacheSize = 48)
     val labelStyle = Type.body.copy(fontSize = 11.sp, color = Secondary)
     val n = spec.values.size.coerceAtLeast(2)
-    val currentN by rememberUpdatedState(n)
-    val bars by rememberUpdatedState(spec.bars)
-    val select by rememberUpdatedState(onSelect)
+    val axisWidth = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
     Canvas(
-        modifier.then(if (!interactive) Modifier else Modifier.pointerInput(Unit) {
-            // Fractional hour under x. Bars are centred in their hour, lines sit on the hour mark.
-            fun hourAt(x: Float): Float {
-                val cw = size.width - 40.dp.toPx()
-                val f = x / cw * 24f - if (bars) 0.5f else 0f
-                return f.coerceIn(0f, (currentN - 1).toFloat())
-            }
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                val slop = viewConfiguration.touchSlop
-                var x = down.position.x
-                // Decide between scrubbing and letting the sheet scroll: a sideways drag or a brief
-                // hold scrubs, a vertical drag goes to the scroll view untouched.
-                val scrubbing = withTimeoutOrNull(140L) {
-                    var total = Offset.Zero
-                    while (true) {
-                        val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
-                        if (!c.pressed) return@withTimeoutOrNull false
-                        total += c.positionChange()
-                        x = c.position.x
-                        if (abs(total.x) > slop && abs(total.x) > abs(total.y)) { c.consume(); return@withTimeoutOrNull true }
-                        if (abs(total.y) > slop) return@withTimeoutOrNull false
-                    }
-                    false
-                } ?: true
-                if (!scrubbing) return@awaitEachGesture
-                select(hourAt(x))
-                while (true) {
-                    val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                    if (!c.pressed) break
-                    c.consume()
-                    select(hourAt(c.position.x))
-                }
-                select(null)
-            }
+        modifier.then(if (!interactive) Modifier else Modifier.scrubbable { x, width ->
+            // Lines report the fractional hour under the finger; bars snap to the hour they cover,
+            // so a chart above or below (sharing the selection) lines up with the highlighted bar.
+            onSelect(x?.let {
+                val f = it / (width - axisWidth) * 24f
+                (if (spec.bars) floor(f) else f).coerceIn(0f, (n - 1).toFloat())
+            })
         })
     ) {
         val right = 40.dp.toPx()
@@ -641,38 +733,25 @@ private fun Chart(
                 val y = yOf(v)
                 drawRoundRect(spec.color(v), Offset(xOf(i.toFloat()) + bw * 0.18f, y), Size(bw * 0.64f, topPad + ch - y), CornerRadius(3.dp.toPx()))
             }
-        } else {
-            fun drawSeries(values: List<Double?>, alpha: Float, fill: Boolean, width: Float) {
+        }
+        val main = Curve(spec.values)
+        val faint = spec.secondary?.takeIf { !spec.bars }?.let { Curve(it) }
+        if (!spec.bars) {
+            fun drawSeries(curve: Curve, alpha: Float, fill: Boolean, width: Float) {
                 val path = Path(); val area = Path()
-                var started = false; var lastX = 0f; var firstX = 0f
-                values.forEachIndexed { i, v ->
-                    if (v == null) return@forEachIndexed
-                    val x = xOf(i.toFloat())
-                    val y = yOf(v)
-                    if (!started) { path.moveTo(x, y); area.moveTo(x, topPad + ch); area.lineTo(x, y); started = true; firstX = x }
-                    else { path.lineTo(x, y); area.lineTo(x, y) }
-                    lastX = x
-                }
-                if (!started) return
-                if (fill) {
-                    area.lineTo(lastX, topPad + ch); area.lineTo(firstX, topPad + ch); area.close()
-                    drawPath(area, Brush.verticalGradient(colors.map { it.copy(alpha = 0.35f * alpha) } + Color.Transparent, startY = topPad, endY = topPad + ch))
-                }
+                curve.trace(::xOf, ::yOf, topPad + ch, path, area)
+                if (fill) drawPath(area, Brush.verticalGradient(colors.map { it.copy(alpha = 0.35f * alpha) } + Color.Transparent, startY = topPad, endY = topPad + ch))
                 drawPath(path, brush, alpha = alpha, style = Stroke(width, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            spec.secondary?.takeIf { !spec.bars }?.let { drawSeries(it, 0.4f, false, 2.dp.toPx()) }
-            drawSeries(spec.values, 1f, true, 3.5f.dp.toPx())
+            faint?.let { drawSeries(it, 0.4f, false, 2.dp.toPx()) }
+            drawSeries(main, 1f, true, 3.5f.dp.toPx())
         }
 
         // Dim the part of today that is already over.
         if (nowIdx != null) {
             val nx = xOf(nowIdx)
             clipRect(0f, topPad - 2, nx, topPad + ch + 2) { drawRect(SheetBg.copy(alpha = 0.45f)) }
-            val i0 = floor(nowIdx).toInt().coerceIn(0, n - 1)
-            val i1 = (i0 + 1).coerceAtMost(n - 1)
-            val v0 = spec.values.getOrNull(i0); val v1 = spec.values.getOrNull(i1)
-            if (v0 != null && v1 != null && !spec.bars) {
-                val v = v0 + (v1 - v0) * (nowIdx - i0)
+            if (!spec.bars) main.at(nowIdx)?.let { v ->
                 drawCircle(SheetBg, 7.dp.toPx(), Offset(nx, yOf(v)))
                 drawCircle(Color.White, 5.dp.toPx(), Offset(nx, yOf(v)))
             }
@@ -693,15 +772,8 @@ private fun Chart(
                 // The line follows the finger; the dot rides the curve between hourly points.
                 val x = xOf(s)
                 drawLine(Color.White.copy(alpha = 0.7f), Offset(x, topPad), Offset(x, topPad + ch), 1.5f.dp.toPx())
-                fun at(values: List<Double?>): Double? {
-                    val i0 = floor(s).toInt().coerceIn(0, values.size - 1)
-                    val i1 = (i0 + 1).coerceAtMost(values.size - 1)
-                    val a = values.getOrNull(i0) ?: return null
-                    val b = values.getOrNull(i1) ?: return a
-                    return a + (b - a) * (s - i0)
-                }
-                spec.secondary?.let { at(it) }?.let { v -> drawCircle(Color.White.copy(alpha = 0.5f), 3.5f.dp.toPx(), Offset(x, yOf(v))) }
-                at(spec.values)?.let { v ->
+                faint?.at(s)?.let { v -> drawCircle(Color.White.copy(alpha = 0.5f), 3.5f.dp.toPx(), Offset(x, yOf(v))) }
+                main.at(s)?.let { v ->
                     drawCircle(SheetBg, 7.dp.toPx(), Offset(x, yOf(v)))
                     drawCircle(Color.White, 5.dp.toPx(), Offset(x, yOf(v)))
                 }
@@ -719,13 +791,25 @@ private fun SunDetail(w: Weather, date: LocalDate) {
     val (first, last) = remember(date) { Astro.twilight(date, w.zone, w.place.lat, w.place.lon) }
     val hrs = (day.daylightSeconds / 3600).toInt()
     val mins = ((day.daylightSeconds % 3600) / 60).roundToInt()
-    Text("$hrs hr $mins min", fontSize = 30.sp, fontFamily = InterDisplay, fontWeight = FontWeight.Medium, color = Color.White)
-    Text("Total Daylight", fontSize = 15.sp, color = Secondary)
+    val dayStart = remember(date, w.zone) { date.atStartOfDay(w.zone).toInstant() }
+    // Fraction of the day under the finger while scrubbing; the header snaps to whole minutes.
+    var scrub by remember(date) { mutableStateOf<Float?>(null) }
+    val scrubMinute by remember(date) { derivedStateOf { scrub?.let { (it * 1440).roundToInt().coerceIn(0, 1439) } } }
+    val sm = scrubMinute
+    if (sm != null) {
+        val t = dayStart.plusSeconds(sm * 60L)
+        val alt = Astro.sunAltitude(t, w.place.lat, w.place.lon).roundToInt()
+        Text(u.time(t.atZone(w.zone).toLocalDateTime()), fontSize = 30.sp, fontFamily = InterDisplay, fontWeight = FontWeight.Medium, color = Color.White)
+        Text(if (alt >= 0) "Sun $alt° above the horizon" else "Sun ${-alt}° below the horizon", fontSize = 15.sp, color = Secondary)
+    } else {
+        Text("$hrs hr $mins min", fontSize = 30.sp, fontFamily = InterDisplay, fontWeight = FontWeight.Medium, color = Color.White)
+        Text("Total Daylight", fontSize = 15.sp, color = Secondary)
+    }
     Spacer(Modifier.height(12.dp))
     val isToday = date == w.now().toLocalDate()
     val now = w.now()
     val measurer = rememberTextMeasurer()
-    Canvas(Modifier.fillMaxWidth().height(200.dp)) {
+    Canvas(Modifier.fillMaxWidth().height(200.dp).scrubbable { x, width -> scrub = x?.let { (it / width).coerceIn(0f, 1f) } }) {
         val samples = 144
         val alts = List(samples + 1) { i ->
             val t = date.atStartOfDay(w.zone).toInstant().plusSeconds(i * 600L)
@@ -749,12 +833,18 @@ private fun SunDetail(w: Weather, date: LocalDate) {
                 drawText(l, topLeft = Offset(x + 3.dp.toPx(), size.height - l.size.height))
             }
         }
-        if (isToday) {
-            val f = (now.toLocalTime().toSecondOfDay() / 86400f)
-            val a = Astro.sunAltitude(Instant.now(), w.place.lat, w.place.lon)
+        fun sunDot(f: Float, a: Double) {
             val p = Offset(f * size.width, y(a))
             drawCircle(Brush.radialGradient(listOf(SunYellow.copy(alpha = 0.6f), Color.Transparent), p, 18.dp.toPx()), 18.dp.toPx(), p)
             drawCircle(if (a > 0) SunYellow else Color.White.copy(alpha = 0.6f), 6.dp.toPx(), p)
+        }
+        val s = scrub
+        if (s != null) {
+            val x = s * size.width
+            drawLine(Color.White.copy(alpha = 0.7f), Offset(x, 0f), Offset(x, size.height), 1.5f.dp.toPx())
+            sunDot(s, Astro.sunAltitude(dayStart.plusSeconds((s * 86400).toLong()), w.place.lat, w.place.lon))
+        } else if (isToday) {
+            sunDot(now.toLocalTime().toSecondOfDay() / 86400f, Astro.sunAltitude(Instant.now(), w.place.lat, w.place.lon))
         }
     }
     Spacer(Modifier.height(16.dp))

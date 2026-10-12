@@ -140,7 +140,7 @@ fun WeatherApp(vm: WeatherViewModel, requestLocation: () -> Unit) {
                 weathers = places.mapNotNull { vm.weather[it.id] },
                 start = mapStart,
                 radar = vm.radar,
-                loadGrid = vm::loadGrid,
+                grids = vm.gridCache,
                 onDone = { screen = Screen.Pager },
                 onList = { screen = Screen.List },
             )

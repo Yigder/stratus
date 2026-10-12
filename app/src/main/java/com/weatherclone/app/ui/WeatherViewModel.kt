@@ -160,17 +160,8 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Map ---------------------------------------------------------------------------
 
-    suspend fun loadGrid(left: Double, top: Double, right: Double, bottom: Double, nx: Int, ny: Int, zoom: Float): WeatherGrid? =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                coroutineScope {
-                    val pts = WeatherGrid.points(left, top, right, bottom, nx, ny)
-                    val fc = async { repo.fetchText(WeatherGrid.forecastUrl(pts)) }
-                    val aq = async { runCatching { repo.fetchText(WeatherGrid.airUrl(pts)) }.getOrNull() }
-                    WeatherGrid.parse(fc.await(), aq.await(), left, top, right, bottom, nx, ny, zoom)
-                }
-            }.getOrNull()
-        }
+    /** Map model data; kept here so reopening the map reuses what was already loaded. */
+    val gridCache = GridCache(repo::fetchText)
 
     suspend fun search(q: String) = repo.search(q)
 

@@ -316,7 +316,7 @@ fun MapScreen(
     weathers: List<Weather>,
     start: Weather?,
     radar: Radar?,
-    loadGrid: suspend (left: Double, top: Double, right: Double, bottom: Double, nx: Int, ny: Int, zoom: Float) -> WeatherGrid?,
+    grids: GridCache,
     onDone: () -> Unit,
     onList: () -> Unit,
 ) {
@@ -326,24 +326,36 @@ fun MapScreen(
     var layer by remember { mutableStateOf(MapLayer.Precipitation) }
     var layerMenu by remember { mutableStateOf(false) }
     var grid by remember { mutableStateOf<WeatherGrid?>(null) }
-    var loading by remember { mutableStateOf(false) }
+    var gridLevel by remember { mutableIntStateOf(-1) }
+    var view by remember { mutableStateOf<GridCache.View?>(null) }
     var size by remember { mutableStateOf(IntSize.Zero) }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val loading = grids.loading > 0
 
-    // Fetch a model grid for the visible area once the map settles.
-    LaunchedEffect(size) {
+    // Work out which blocks are on screen once the map settles (straight away on open) and fetch
+    // the missing ones. Loads run in the screen's scope, so a further pan doesn't cancel them.
+    LaunchedEffect(size, layer) {
         if (size == IntSize.Zero) return@LaunchedEffect
+        var first = true
         snapshotFlow { Triple(state.lat, state.lon, state.zoom) }.collectLatest { (lat, lon, zoom) ->
-            delay(500)
+            if (!first) delay(250)
+            first = false
             val worldPx = tileBase(density) * 2.0.pow(zoom.toDouble())
             val w = size.width / worldPx; val h = size.height / worldPx
             val cx = Mercator.x(lon); val cy = Mercator.y(lat)
-            val g = grid
-            if (g != null && g.covers(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2) && kotlin.math.abs(g.zoom - zoom) < 1.2f) return@collectLatest
-            loading = true
-            val m = 0.2
-            loadGrid(cx - w * (0.5 + m), cy - h * (0.5 + m), cx + w * (0.5 + m), cy + h * (0.5 + m), 9, 15, zoom)?.let { grid = it }
-            loading = false
+            val v = grids.view(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, zoom)
+            view = v
+            scope.launch { grids.load(v, layer == MapLayer.AirQuality) }
+        }
+    }
+    // Show what's loaded for the current view. Within a level that only ever adds ground; after a
+    // zoom changes the level, keep the old grid until the new one is complete (or has given up).
+    LaunchedEffect(view, grids.version, grids.loading, layer) {
+        val v = view ?: return@LaunchedEffect
+        val air = layer == MapLayer.AirQuality
+        if (v.level == gridLevel || grids.isComplete(v, air) || !grids.isPending(v, air)) {
+            grids.composite(v)?.let { grid = it; gridLevel = v.level }
         }
     }
 
