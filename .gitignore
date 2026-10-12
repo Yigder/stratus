@@ -11,3 +11,4 @@ captures/
 keystore.properties
 *.jks
 *.keystore
+CLAUDE.md

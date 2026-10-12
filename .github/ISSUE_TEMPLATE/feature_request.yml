@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea for something Stratus could do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Stratus to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
+      description: What are you trying to do today, and what gets in the way?
+  - type: textarea
+    id: ios
+    attributes:
+      label: How does Apple Weather do it?
+      description: Optional. Stratus follows Apple Weather closely, so a screenshot from an iPhone is very helpful.

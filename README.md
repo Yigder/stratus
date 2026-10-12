@@ -2,6 +2,13 @@
 
 An Android weather app modelled closely on Apple Weather for iPhone: the same layout, the same cards, the same detail sheets and the same animated skies, built with Kotlin and Jetpack Compose. It uses free, open weather data, so it needs no API keys or accounts.
 
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+![Android 10+](https://img.shields.io/badge/Android-10%2B-3ddc84?logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7f52ff?logo=kotlin&logoColor=white)
+![No tracking](https://img.shields.io/badge/telemetry-none-555)
+
+**[⬇ Download Stratus.apk](../../releases/latest/download/Stratus.apk)** · [Release notes](../../releases/latest) · [▶ Watch the showcase (0:40)](promo/stratus-showcase.mp4)
+
 <p>
   <img src="docs/screenshots/home.png" width="240" alt="Forecast page on a sunny day">
   <img src="docs/screenshots/home-cards.png" width="240" alt="Weather cards">
@@ -79,7 +86,7 @@ Full-screen map with a timeline slider:
 - Markers for your saved locations.
 
 ### Locations
-Search for any city, preview it before adding, reorder or swipe to delete, and use your current location. Settings for Celsius/Fahrenheit and units (wind, precipitation, pressure, distance) are in the ⋯ menu.
+Search for any city, preview it before adding, reorder or swipe to delete, and use your current location. Settings for Celsius/Fahrenheit and units (wind, precipitation, pressure, distance) are in the ⋯ menu, along with **About Stratus** (version, source code, data sources and open-source licenses).
 
 ### Severe weather alerts
 Official alerts for the **United States** (NWS), **Canada** (Environment Canada) and **38 European countries** (MeteoAlarm), shown at the top of the page with full details.
@@ -142,6 +149,18 @@ The APK is written to `app/build/outputs/apk/release/`. Release builds are signe
 ```
 
 Built with Kotlin, Jetpack Compose, Glance (widgets), WorkManager, [Haze](https://github.com/chrisbanes/haze) (blur), OkHttp, kotlinx.serialization and the Smartspacer plugin SDK.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and send changes.
+
+## License
+
+Copyright (C) 2026 Yigder
+
+Stratus is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but without any warranty; see the license for details.
+
+The license covers Stratus's own code. The libraries and the Inter font it's built with keep their own licenses (listed in the app under ⋯ → About Stratus). Weather data belongs to the services listed above and is used under their terms.
 
 ## Disclaimer
 

@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in Stratus doesn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. The more detail, the faster it gets fixed. Please leave out anything personal, especially your exact location or coordinates.
+  - type: input
+    id: version
+    attributes:
+      label: Stratus version
+      description: ⋯ → About Stratus
+      placeholder: "1.3"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: "Pixel 8, Android 16"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where is the problem?
+      options:
+        - Forecast page or cards
+        - Detail sheets and charts
+        - Map
+        - Locations and search
+        - Severe weather alerts
+        - Notifications
+        - Home-screen widgets
+        - Smartspacer / At a Glance
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Tap …
+        3. …
+  - type: input
+    id: place
+    attributes:
+      label: City or region (if it's about the forecast or alerts)
+      description: A nearby city is enough. Please don't share your exact location.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional. `adb logcat` output around the error helps a lot with crashes.
+      render: text

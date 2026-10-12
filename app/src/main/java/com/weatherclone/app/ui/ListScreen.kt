@@ -119,6 +119,7 @@ fun ListScreen(
     var unitsSheet by remember { mutableStateOf(false) }
     var notifSheet by remember { mutableStateOf(false) }
     var widgetMenu by remember { mutableStateOf(false) }
+    var aboutSheet by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
@@ -141,7 +142,7 @@ fun ListScreen(
                                 Modifier.size(30.dp).clip(CircleShape).border(1.6.dp, Color.White, CircleShape).clickable { menu = true },
                                 contentAlignment = Alignment.Center,
                             ) { Icon(Icons.Filled.MoreHoriz, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
-                            SettingsMenu(menu, { menu = false }, settings, onSettings, onEdit = { editing = true }, onUnits = { unitsSheet = true }, onNotifications = { notifSheet = true }, onWidgets = { widgetMenu = true })
+                            SettingsMenu(menu, { menu = false }, settings, onSettings, onEdit = { editing = true }, onUnits = { unitsSheet = true }, onNotifications = { notifSheet = true }, onWidgets = { widgetMenu = true }, onAbout = { aboutSheet = true })
                             WidgetMenu(widgetMenu) { widgetMenu = false }
                         }
                     }
@@ -251,6 +252,7 @@ fun ListScreen(
 
     if (unitsSheet) UnitsSheet(settings, onSettings) { unitsSheet = false }
     if (notifSheet) NotificationsSheet(notif, onNotif) { notifSheet = false }
+    if (aboutSheet) AboutSheet { aboutSheet = false }
 }
 
 private fun highlight(text: String, q: String) = buildAnnotatedString {
@@ -262,7 +264,7 @@ private fun highlight(text: String, q: String) = buildAnnotatedString {
 }
 
 @Composable
-private fun SettingsMenu(expanded: Boolean, dismiss: () -> Unit, s: Settings, onSettings: (Settings) -> Unit, onEdit: () -> Unit, onUnits: () -> Unit, onNotifications: () -> Unit, onWidgets: () -> Unit) {
+private fun SettingsMenu(expanded: Boolean, dismiss: () -> Unit, s: Settings, onSettings: (Settings) -> Unit, onEdit: () -> Unit, onUnits: () -> Unit, onNotifications: () -> Unit, onWidgets: () -> Unit, onAbout: () -> Unit) {
     DropdownMenu(expanded, dismiss, containerColor = Color(0xFF252527), shape = RoundedCornerShape(14.dp), modifier = Modifier.width(230.dp)) {
         DropdownMenuItem(text = { Text("Edit List", color = Color.White) }, onClick = { dismiss(); onEdit() })
         DropdownMenuItem(text = { Text("Notifications", color = Color.White) }, onClick = { dismiss(); onNotifications() })
@@ -282,6 +284,8 @@ private fun SettingsMenu(expanded: Boolean, dismiss: () -> Unit, s: Settings, on
         )
         HorizontalDivider(color = Color(0xFF3A3A3C))
         DropdownMenuItem(text = { Text("Units", color = Color.White) }, onClick = { dismiss(); onUnits() })
+        HorizontalDivider(color = Color(0xFF3A3A3C))
+        DropdownMenuItem(text = { Text("About Stratus", color = Color.White) }, onClick = { dismiss(); onAbout() })
     }
 }
 
