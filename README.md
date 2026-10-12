@@ -135,7 +135,7 @@ Requires JDK 17+ and the Android SDK (compile SDK 37).
 ./gradlew assembleRelease
 ```
 
-The APK is written to `app/build/outputs/apk/release/`. Screenshot tests (Robolectric) render the images in this README into `app/build/screens/`:
+The APK is written to `app/build/outputs/apk/release/`. Release builds are signed with the key described in a `keystore.properties` file at the project root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). That file is git-ignored; without it, builds fall back to the debug key. Screenshot tests (Robolectric) render the images in this README into `app/build/screens/`:
 
 ```bash
 ./gradlew testDebugUnitTest

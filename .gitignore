@@ -8,3 +8,6 @@ local.properties
 captures/
 *.apk
 .claude/
+keystore.properties
+*.jks
+*.keystore
