@@ -148,6 +148,16 @@ class ScreenshotTest {
         shot("detail_conditions_chance")
     }
 
+    @Test
+    fun detailConditionsScrub() {
+        val w = weather()
+        rule.setContent { Themed { CompositionLocalProvider(LocalScene provides Scene.of(w)) { Box(Modifier.background(Color(0xFF1C1C1E))) { DetailContent(w, Metric.Conditions, null) {} } } } }
+        // Scrub the temperature chart; the chance chart below keeps its own (empty) selection.
+        rule.onRoot().performTouchInput { down(Offset(width * 0.3f, top + 1150f)); moveTo(Offset(width * 0.55f, top + 1150f)) }
+        shot("detail_conditions_scrub")
+        rule.onRoot().performTouchInput { up() }
+    }
+
     private fun detailOf(metric: Metric, name: String) {
         val w = weather()
         rule.setContent { Themed { Box(Modifier.background(Color(0xFF1C1C1E))) { DetailContent(w, metric, null) {} } } }

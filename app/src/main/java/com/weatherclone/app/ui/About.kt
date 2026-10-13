@@ -64,7 +64,7 @@ private val dataSources = listOf(
     Credit("Open-Meteo", "Forecast, air quality, averages, city search", "CC BY 4.0", null, "https://open-meteo.com"),
     Credit("RainViewer", "Radar", "Free API", null, "https://www.rainviewer.com"),
     Credit("Esri", "Map tiles · Esri, HERE, Garmin, OpenStreetMap contributors", "Esri terms", null, "https://www.esri.com"),
-    Credit("National Weather Service", "Alerts in the United States", "Public domain", null, "https://www.weather.gov"),
+    Credit("National Weather Service", "US forecast and alerts", "Public domain", null, "https://www.weather.gov"),
     Credit("Environment and Climate Change Canada", "Alerts in Canada", "Open Government Licence – Canada", null, "https://weather.gc.ca"),
     Credit("MeteoAlarm", "Alerts in Europe", "MeteoAlarm terms", null, "https://meteoalarm.org"),
 )

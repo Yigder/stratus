@@ -38,6 +38,7 @@ object Parse {
         alerts: String?,
         archive: String?,
         fetchedAt: Instant,
+        nws: String? = null,
     ): Weather {
         val root = json.parseToJsonElement(forecast).jsonObject
         val zone = zoneOf(root)
@@ -113,13 +114,17 @@ object Parse {
             precip = c?.dbl("precipitation") ?: 0.0,
         )
 
+        // US places: the official NWS forecast replaces temperature, feels-like and chance where it covers.
+        val grid = nws?.let { runCatching { Nws.parse(it, zone) }.getOrNull() }
+        val (oHours, oDays, oCurrent) = if (grid != null) Nws.overlay(grid, hours, days, current, LocalDateTime.now(zone)) else Triple(hours, days, current)
+
         return Weather(
             place = place,
             zone = zone,
             fetchedAt = fetchedAt,
-            current = current,
-            hours = hours,
-            days = days,
+            current = oCurrent,
+            hours = oHours,
+            days = oDays,
             minutes = minutes,
             air = air?.let { runCatching { airQuality(it, zone) }.getOrNull() },
             alerts = alerts?.let { Alerts.decode(it) } ?: emptyList(),

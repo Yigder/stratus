@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -14,8 +14,8 @@ android {
         applicationId = "com.weatherclone.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
     }
 
     // Release key details live in keystore.properties (git-ignored). Without it, release builds

@@ -54,7 +54,7 @@ class WeatherRepository private constructor(private val context: Context) {
         val fc = readCache("fc_$id.json") ?: return@withContext null
         val ts = file("fc_$id.json").lastModified()
         runCatching {
-            Parse.weather(place, fc, readCache("aq_$id.json"), readCache("al_$id.json"), readCache(normalsKey(place)), Instant.ofEpochMilli(ts))
+            Parse.weather(place, fc, readCache("aq_$id.json"), readCache("al_$id.json"), readCache(normalsKey(place)), Instant.ofEpochMilli(ts), readCache("nw_$id.json"))
         }.getOrNull()
     }
 
@@ -65,12 +65,15 @@ class WeatherRepository private constructor(private val context: Context) {
             val aq = async { runCatching { get(airUrl(place.lat, place.lon)) }.getOrNull() }
             val al = async { alerts(place) }
             val nm = async { normalsJson(place) }
+            val nw = async { nwsGrid(place) }
             val forecast = fc.await()
             writeCache("fc_$id.json", forecast)
             aq.await()?.let { writeCache("aq_$id.json", it) }
             // Keep the last good alert list if the alert feed is temporarily unreachable.
             val alerts = al.await()?.let { Alerts.encode(it) }?.also { writeCache("al_$id.json", it) } ?: readCache("al_$id.json")
-            Parse.weather(place, forecast, aq.await() ?: readCache("aq_$id.json"), alerts, nm.await(), Instant.now())
+            // Keep the last NWS grid if the service is down; Parse drops it once it's a day old.
+            val grid = nw.await()?.also { writeCache("nw_$id.json", it) } ?: readCache("nw_$id.json")
+            Parse.weather(place, forecast, aq.await() ?: readCache("aq_$id.json"), alerts, nm.await(), Instant.now(), grid)
         }
     }
 
@@ -91,6 +94,18 @@ class WeatherRepository private constructor(private val context: Context) {
             Alerts.Source.None -> emptyList()
         }
     }.getOrNull()
+
+    /** NWS gridpoint forecast (trimmed) for US places; null elsewhere or when NWS is unreachable. */
+    private fun nwsGrid(p: Place): String? {
+        if (Alerts.sourceFor(p) != Alerts.Source.NWS) return null
+        val geo = mapOf("Accept" to "application/geo+json")
+        val pointKey = String.format(Locale.US, "np_%.2f_%.2f.txt", p.lat, p.lon)
+        return runCatching {
+            // The point-to-grid lookup never changes for a location, so it's fetched once.
+            val gridUrl = readCache(pointKey) ?: Nws.gridUrl(get(Nws.pointsUrl(p.lat, p.lon), geo))!!.also { writeCache(pointKey, it) }
+            Nws.trim(get(gridUrl, geo))
+        }.getOrNull()
+    }
 
     private fun normalsKey(p: Place) = String.format(Locale.US, "nm_%.1f_%.1f.json", p.lat, p.lon)
 

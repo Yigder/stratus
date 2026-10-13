@@ -6,6 +6,7 @@ An Android weather app modelled closely on Apple Weather for iPhone: the same la
 ![Android 10+](https://img.shields.io/badge/Android-10%2B-3ddc84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7f52ff?logo=kotlin&logoColor=white)
 ![No tracking](https://img.shields.io/badge/telemetry-none-555)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support%20Stratus-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/yigder)
 
 **[⬇ Download Stratus.apk](../../releases/latest/download/Stratus.apk)** · [Release notes](../../releases/latest) · [▶ Watch the showcase (0:40)](promo/stratus-showcase.mp4)
 
@@ -119,7 +120,7 @@ Stratus refreshes Smartspacer whenever the weather updates, about every 15 minut
 
 | Data | Source |
 | --- | --- |
-| Forecast, hourly and 10-day | [Open-Meteo](https://open-meteo.com) |
+| Forecast, hourly and 10-day | [Open-Meteo](https://open-meteo.com); in the US, temperature, feels-like and chance of precipitation for the next 7 days come from the [National Weather Service](https://www.weather.gov) |
 | Air quality | Open-Meteo (CAMS) |
 | Averages | Open-Meteo historical weather |
 | Radar | [RainViewer](https://www.rainviewer.com) |
@@ -133,6 +134,12 @@ Stratus refreshes Smartspacer whenever the weather updates, about every 15 minut
 - **Icons and animations:** SF Symbols and Apple's animations can't be used outside Apple devices. Stratus draws its own in the same style.
 - **Radar** goes back two hours (RainViewer's free limit). Future hours come from forecast model data.
 - **Alerts** are available only where a free official feed exists (US, Canada, most of Europe).
+
+## Support Stratus
+
+Stratus is free, has no ads and doesn't track you. It's built and maintained in my spare time. If you enjoy it and want to help keep it going, you can buy me a coffee on **[Ko-fi](https://ko-fi.com/yigder)**. Every tip helps, and is never expected.
+
+<a href="https://ko-fi.com/yigder"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support Stratus on Ko-fi"></a>
 
 ## Building
 

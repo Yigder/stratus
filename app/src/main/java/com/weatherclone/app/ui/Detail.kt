@@ -304,7 +304,26 @@ private class Spec(
     val summaryTitle: String = "Daily Summary",
     val summary: String,
     val about: String,
+    /** What the main and faint lines draw, when that differs from the hourly readouts (smoothed feels-like). */
+    val valuesCurve: List<Double?> = values,
+    val secondaryCurve: List<Double?>? = secondary,
 )
+
+/**
+ * Feels-like swings hour to hour with sun and gusts; a light 1-2-1 smoothing (two passes) lets it draw
+ * as calmly as the temperature line. Readouts keep the hourly values.
+ */
+private fun smoothed(values: List<Double>): List<Double> {
+    var v = values
+    repeat(2) {
+        v = List(v.size) { i ->
+            val a = v.getOrNull(i - 1) ?: v[i]
+            val b = v.getOrNull(i + 1) ?: v[i]
+            (a + 2 * v[i] + b) / 4
+        }
+    }
+    return v
+}
 
 /**
  * Monotone cubic (Fritsch–Carlson) through hourly values: smooth like Apple's charts, but it never
@@ -431,6 +450,9 @@ private fun ChartDetail(w: Weather, metric: Metric, date: LocalDate, menuButton:
     // Fractional hour under the finger; only the chart's draw phase reads it, so scrubbing just redraws.
     var scrub by remember(metric, date) { mutableStateOf<Float?>(null) }
     val selected by remember(metric, date) { derivedStateOf { scrub?.roundToInt() } }
+    // The chance-of-precipitation chart below scrubs on its own.
+    var chanceScrub by remember(metric, date) { mutableStateOf<Float?>(null) }
+    val chanceSelected by remember(metric, date) { derivedStateOf { chanceScrub?.roundToInt() } }
 
     val spec: Spec = when (metric) {
         Metric.Conditions, Metric.Feels -> {
@@ -456,6 +478,8 @@ private fun ChartDetail(w: Weather, metric: Metric, date: LocalDate, menuButton:
                 summary = if (feels) "Feels-like temperatures range from ${u.temp(day!!.feelsLow)} to ${u.temp(day.feelsHigh)}." else Summaries.daily(w, date, u),
                 about = if (feels) "The feels-like temperature conveys how warm or cold it feels, combining the effects of wind, humidity and sunlight with the actual temperature."
                 else "Temperatures shown are the air temperature about 2 metres above the ground. Icons show the expected sky conditions for each hour.",
+                valuesCurve = if (feels) smoothed(v) else v,
+                secondaryCurve = if (feels) other else smoothed(other),
             )
         }
         Metric.Uv -> {
@@ -600,12 +624,12 @@ private fun ChartDetail(w: Weather, metric: Metric, date: LocalDate, menuButton:
         }
     }
 
-    // Hourly chance as bars under the main chart, as in Apple's Conditions view. It shares the
-    // selection, so scrubbing either chart highlights the same hour in both.
+    // Hourly chance as bars under the main chart, as in Apple's Conditions view. Each chart has its
+    // own selection, so scrubbing one leaves the other alone.
     if ((metric == Metric.Conditions || metric == Metric.Precip) && day != null) {
         Spacer(Modifier.height(24.dp))
         Text("Chance of Precipitation", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-        val selChance = sel?.let { hours.getOrNull(it) }
+        val selChance = chanceSelected?.let { hours.getOrNull(it) }
         Text(
             when {
                 selChance != null -> "${u.hour(selChance.time)}  ·  ${selChance.precipChance}%"
@@ -620,7 +644,7 @@ private fun ChartDetail(w: Weather, metric: Metric, date: LocalDate, menuButton:
                 values = hours.map { it.precipChance.toDouble() }, yMin = 0.0, yMax = 100.0, color = { RainBlue }, bars = true,
                 fmt = { "${it.roundToInt()}%" }, axis = { "${it.roundToInt()}%" }, headline = "", sub = "", summary = "", about = "",
             ),
-            nowIdx, selected = { scrub }, onSelect = { scrub = it }, modifier = Modifier.fillMaxWidth().height(170.dp),
+            nowIdx, selected = { chanceScrub }, onSelect = { chanceScrub = it }, modifier = Modifier.fillMaxWidth().height(170.dp),
         )
     }
 
@@ -662,8 +686,7 @@ private fun Chart(
     val axisWidth = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
     Canvas(
         modifier.then(if (!interactive) Modifier else Modifier.scrubbable { x, width ->
-            // Lines report the fractional hour under the finger; bars snap to the hour they cover,
-            // so a chart above or below (sharing the selection) lines up with the highlighted bar.
+            // Lines report the fractional hour under the finger; bars snap to the hour they cover.
             onSelect(x?.let {
                 val f = it / (width - axisWidth) * 24f
                 (if (spec.bars) floor(f) else f).coerceIn(0f, (n - 1).toFloat())
@@ -734,8 +757,8 @@ private fun Chart(
                 drawRoundRect(spec.color(v), Offset(xOf(i.toFloat()) + bw * 0.18f, y), Size(bw * 0.64f, topPad + ch - y), CornerRadius(3.dp.toPx()))
             }
         }
-        val main = Curve(spec.values)
-        val faint = spec.secondary?.takeIf { !spec.bars }?.let { Curve(it) }
+        val main = Curve(spec.valuesCurve)
+        val faint = spec.secondaryCurve?.takeIf { !spec.bars }?.let { Curve(it) }
         if (!spec.bars) {
             fun drawSeries(curve: Curve, alpha: Float, fill: Boolean, width: Float) {
                 val path = Path(); val area = Path()
@@ -743,7 +766,7 @@ private fun Chart(
                 if (fill) drawPath(area, Brush.verticalGradient(colors.map { it.copy(alpha = 0.35f * alpha) } + Color.Transparent, startY = topPad, endY = topPad + ch))
                 drawPath(path, brush, alpha = alpha, style = Stroke(width, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            faint?.let { drawSeries(it, 0.4f, false, 2.dp.toPx()) }
+            faint?.let { drawSeries(it, 0.45f, false, 3.5f.dp.toPx()) }
             drawSeries(main, 1f, true, 3.5f.dp.toPx())
         }
 
@@ -772,7 +795,7 @@ private fun Chart(
                 // The line follows the finger; the dot rides the curve between hourly points.
                 val x = xOf(s)
                 drawLine(Color.White.copy(alpha = 0.7f), Offset(x, topPad), Offset(x, topPad + ch), 1.5f.dp.toPx())
-                faint?.at(s)?.let { v -> drawCircle(Color.White.copy(alpha = 0.5f), 3.5f.dp.toPx(), Offset(x, yOf(v))) }
+                faint?.at(s)?.let { v -> drawCircle(Color.White.copy(alpha = 0.6f), 4.dp.toPx(), Offset(x, yOf(v))) }
                 main.at(s)?.let { v ->
                     drawCircle(SheetBg, 7.dp.toPx(), Offset(x, yOf(v)))
                     drawCircle(Color.White, 5.dp.toPx(), Offset(x, yOf(v)))
