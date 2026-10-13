@@ -8,7 +8,7 @@ An Android weather app modelled closely on Apple Weather for iPhone: the same la
 ![No tracking](https://img.shields.io/badge/telemetry-none-555)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support%20Stratus-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/yigder)
 
-**[⬇ Download Stratus.apk](../../releases/latest/download/Stratus.apk)** · [Release notes](../../releases/latest) · [▶ Watch the showcase (0:40)](promo/stratus-showcase.mp4)
+**[⬇ Download Stratus.apk](../../releases/latest/download/Stratus.apk)** · [Release notes](../../releases/latest) · [▶ Watch the showcase (0:45)](promo/stratus-showcase.mp4)
 
 <p>
   <img src="docs/screenshots/home.png" width="240" alt="Forecast page on a sunny day">
